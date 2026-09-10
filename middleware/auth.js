@@ -13,8 +13,7 @@ function tokenFrom(request) {
 export function requireAuth(request, response, next) {
   try {
     const token = tokenFrom(request);
-    if (!token)
-      return response.status(401).json({ error: "Admin login required" });
+    if (!token) return response.status(401).json({ error: "Admin login required" });
     request.user = verifyAccessToken(decodeURIComponent(token));
     next();
   } catch {
@@ -34,7 +33,5 @@ export function optionalAuth(request, _response, next) {
 
 export function requireRole(...roles) {
   return (request, response, next) =>
-    roles.includes(request.user.role)
-      ? next()
-      : response.status(403).json({ error: "Insufficient permissions" });
+    roles.includes(request.user?.role) ? next() : response.status(403).json({ error: "Insufficient permissions" });
 }
