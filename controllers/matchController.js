@@ -58,6 +58,12 @@ export async function saveState(request, response, io) {
   }
 
   if (!match) {
+    // Mirrors the product rule, not just a hidden button: super admins run
+    // the admin roster, admins run matches. Enforced here so it holds even
+    // if a super admin's session somehow reaches this endpoint directly.
+    if (request.user.role !== "admin") {
+      return response.status(403).json({ error: "Only admins can create matches" });
+    }
     match = new Match({ _id: request.params.id, owner: request.user.sub, ...incoming });
   } else {
     match.set(incoming);
@@ -103,6 +109,45 @@ export async function appendEvents(request, response, io) {
     io.to(`match:${request.params.id}`).emit("events:new", added);
   }
   response.json({ added });
+}
+
+export async function adjustScore(request, response, io) {
+  const { team, amount } = request.body || {};
+  if (!["A", "B"].includes(team)) return response.status(400).json({ error: "`team` must be A or B" });
+  if (!Number.isInteger(amount) || amount < -10 || amount > 10 || amount === 0) {
+    return response.status(400).json({ error: "`amount` must be a non-zero integer between -10 and 10" });
+  }
+
+  const scoreField = `score${team}`;
+  const filter =
+    request.user.role === "super_admin"
+      ? { _id: request.params.id }
+      : { _id: request.params.id, owner: request.user.sub };
+
+  const match = await Match.findOneAndUpdate(
+    filter,
+    [
+      {
+        $set: {
+          [scoreField]: { $max: [0, { $add: [{ $ifNull: [`$${scoreField}`, 0] }, amount] }] },
+          status: { $cond: [{ $eq: ["$status", "upcoming"] }, "live", "$status"] },
+          version: { $add: [{ $ifNull: ["$version", 0] }, 1] },
+        },
+      },
+    ],
+    { new: true },
+  );
+
+  if (!match) {
+    const exists = await Match.exists({ _id: request.params.id });
+    return response.status(exists ? 403 : 404).json({
+      error: exists ? "Match belongs to another admin" : "Match not found",
+    });
+  }
+
+  const payload = publicMatch(match);
+  io.to(`match:${request.params.id}`).emit("state:update", payload);
+  response.json(payload);
 }
 
 export async function completeMatch(request, response, io) {

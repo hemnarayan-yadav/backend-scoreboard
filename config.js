@@ -23,6 +23,11 @@ if (isProduction) {
 }
 
 const jwtTtl = process.env.JWT_TTL || "8h";
+const corsOrigins = process.env.CORS_ORIGIN?.split(",").map((value) => value.trim()).filter(Boolean) || [];
+
+if (isProduction && corsOrigins.includes("*")) {
+  throw new Error("CORS_ORIGIN cannot be * when NODE_ENV=production");
+}
 
 export const config = {
   isProduction,
@@ -31,7 +36,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || (isProduction ? undefined : "dev-only-insecure-secret"),
   jwtTtl,
   jwtTtlSeconds: parseDurationToSeconds(jwtTtl, 8 * 3600),
-  corsOrigins: (process.env.CORS_ORIGIN?.split(",").map((value) => value.trim()).filter(Boolean)) || [],
+  corsOrigins,
   // A `null` Origin header comes from file:// pages or sandboxed iframes.
   // Handy for testing a control panel locally; never trust it in production.
   allowNullOrigin: !isProduction,

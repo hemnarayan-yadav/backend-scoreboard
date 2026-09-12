@@ -1,4 +1,5 @@
 import { verifyAccessToken } from "../utils/auth.js";
+import { User } from "../models/User.js";
 
 function tokenFrom(request) {
   const header = request.headers.authorization;
@@ -10,21 +11,39 @@ function tokenFrom(request) {
   return cookie?.slice("kabaddi_token=".length);
 }
 
-export function requireAuth(request, response, next) {
+function userPayload(user) {
+  return {
+    sub: String(user._id),
+    id: String(user._id),
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    active: user.active,
+  };
+}
+
+export async function requireAuth(request, response, next) {
   try {
     const token = tokenFrom(request);
     if (!token) return response.status(401).json({ error: "Admin login required" });
-    request.user = verifyAccessToken(decodeURIComponent(token));
+    const payload = verifyAccessToken(decodeURIComponent(token));
+    const user = await User.findById(payload.sub).select("name email role active").lean();
+    if (!user || !user.active) return response.status(401).json({ error: "Session expired" });
+    request.user = userPayload(user);
     next();
   } catch {
     return response.status(401).json({ error: "Session expired" });
   }
 }
 
-export function optionalAuth(request, _response, next) {
+export async function optionalAuth(request, _response, next) {
   try {
     const token = tokenFrom(request);
-    if (token) request.user = verifyAccessToken(decodeURIComponent(token));
+    if (token) {
+      const payload = verifyAccessToken(decodeURIComponent(token));
+      const user = await User.findById(payload.sub).select("name email role active").lean();
+      if (user?.active) request.user = userPayload(user);
+    }
   } catch {
     // Public endpoints continue without an invalid optional session.
   }

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { appendEvents, completeMatch, getMatch, listMatches, saveState } from "../controllers/matchController.js";
+import { adjustScore, appendEvents, completeMatch, getMatch, listMatches, saveState } from "../controllers/matchController.js";
 import { optionalAuth, requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
@@ -23,6 +23,7 @@ export function matchRoutes(io) {
   router.get("/", optionalAuth, asyncHandler(listMatches));
   router.get("/:id", asyncHandler(getMatch));
   router.put("/:id/state", requireAuth, mutationLimiter, asyncHandler((req, res) => saveState(req, res, io)));
+  router.post("/:id/score", requireAuth, mutationLimiter, asyncHandler((req, res) => adjustScore(req, res, io)));
   router.post("/:id/events", requireAuth, mutationLimiter, asyncHandler((req, res) => appendEvents(req, res, io)));
   router.post("/:id/complete", requireAuth, mutationLimiter, asyncHandler((req, res) => completeMatch(req, res, io)));
   return router;

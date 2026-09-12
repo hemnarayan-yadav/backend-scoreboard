@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const MAX_STORED_EVENTS = 300;
+export const MAX_STORED_EVENTS = 300;
 
 const eventSchema = new mongoose.Schema(
   {
@@ -72,6 +72,9 @@ matchSchema.index({ updatedAt: -1 });
 matchSchema.pre("save", function capEvents(next) {
   if (this.events.length > MAX_STORED_EVENTS) {
     this.events = this.events.slice(this.events.length - MAX_STORED_EVENTS);
+  }
+  if (this.appliedEventIds.length > MAX_STORED_EVENTS) {
+    this.appliedEventIds = this.appliedEventIds.slice(this.appliedEventIds.length - MAX_STORED_EVENTS);
   }
   next();
 });

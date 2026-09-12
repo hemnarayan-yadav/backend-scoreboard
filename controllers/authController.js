@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { User } from "../models/User.js";
+import { Match } from "../models/Match.js";
 import { authCookie, clearAuthCookie, signAccessToken } from "../utils/auth.js";
 import { config } from "../config.js";
 
@@ -10,11 +11,13 @@ import { config } from "../config.js";
 const DUMMY_HASH = "$2b$12$CwTycUXWue0Thq9StjUM0uJ8i4Vy9wLU/hHfrHIGvzTP0mrLR.Wu6";
 
 const safeUser = (user) => ({
-  id: user._id,
+  id: String(user._id),
+  _id: String(user._id),
   name: user.name,
   email: user.email,
   role: user.role,
   active: user.active,
+  createdAt: user.createdAt,
 });
 
 export async function ensureSuperAdmin() {
@@ -59,7 +62,49 @@ export function logout(_request, response) {
 }
 
 export async function listUsers(_request, response) {
-  response.json(await User.find().sort({ createdAt: -1 }).select("name email role active createdAt"));
+  const users = await User.find().sort({ createdAt: -1 }).select("name email role active createdAt").lean();
+  const counts = await Match.aggregate([{ $group: { _id: "$owner", total: { $sum: 1 } } }]);
+  const matchCountByOwner = new Map(counts.map((row) => [String(row._id), row.total]));
+  response.json(users.map((user) => ({ ...safeUser(user), matchCount: matchCountByOwner.get(String(user._id)) || 0 })));
+}
+
+// Backs the Super Admin console's detail drawer: a single admin's profile
+// plus how many matches they've run, broken down by state. One aggregate
+// query rather than three separate countDocuments() round trips.
+export async function getUser(request, response) {
+  const user = await User.findById(request.params.id).select("name email role active createdAt");
+  if (!user) return response.status(404).json({ error: "Admin not found" });
+
+  const [stats] = await Match.aggregate([
+    { $match: { owner: user._id } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        live: { $sum: { $cond: [{ $eq: ["$status", "live"] }, 1, 0] } },
+        completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+      },
+    },
+  ]);
+
+  response.json({
+    user: safeUser(user),
+    stats: { total: stats?.total || 0, live: stats?.live || 0, completed: stats?.completed || 0 },
+  });
+}
+
+export async function setUserActive(request, response) {
+  const { active } = request.body || {};
+  if (typeof active !== "boolean") return response.status(400).json({ error: "`active` must be true or false" });
+  if (request.params.id === request.user.sub) {
+    return response.status(400).json({ error: "You can't deactivate your own account" });
+  }
+
+  const user = await User.findByIdAndUpdate(request.params.id, { active }, { new: true }).select(
+    "name email role active createdAt",
+  );
+  if (!user) return response.status(404).json({ error: "Admin not found" });
+  response.json({ user: safeUser(user) });
 }
 
 export async function createUser(request, response) {
